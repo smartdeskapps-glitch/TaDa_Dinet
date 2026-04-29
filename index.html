@@ -587,15 +587,27 @@
       // Solo necesitamos interceptar cuando targetId === 'os-ean-target'
     }
 
-    // Extender el handler existente de postMessage para capturar el resultado offline
-    window.addEventListener('message', function(event) {
-      var d = event.data;
-      if (!d || d.type !== 'SCAN_RESULT') return;
-      if (d.targetId === 'os-ean-target' && offlineShell.classList.contains('show')) {
-        document.getElementById('os-ean').value = d.code || '';
-        osResolverEAN();
-      }
-    });
+    // Polling localStorage para resultado del scanner en modo offline shell
+    (function() {
+      var _lastOfflineScanTs = 0;
+      setInterval(function() {
+        if (!offlineShell.classList.contains('show')) return;
+        try {
+          var raw = localStorage.getItem('dinet_scan_result');
+          if (!raw) return;
+          var d = JSON.parse(raw);
+          if (!d || !d.ts || d.ts <= _lastOfflineScanTs) return;
+          if (d.targetId !== 'os-ean-target') return;
+          _lastOfflineScanTs = d.ts;
+          localStorage.removeItem('dinet_scan_result');
+          hideScannerBanner();
+          if (d.type === 'SCAN_RESULT') {
+            document.getElementById('os-ean').value = d.code || '';
+            osResolverEAN();
+          }
+        } catch(e) {}
+      }, 300);
+    })();
 
     // ==================== PWA ====================
     if ('serviceWorker' in navigator) {
@@ -677,21 +689,16 @@
       if (d.type === 'OPEN_SCANNER')  { showScannerBanner(d.targetId, d.title); return; }
       if (d.type === 'CLOSE_SCANNER') { hideScannerBanner(); return; }
 
-      // SCAN_RESULT: viene del scanner.html (mismo origen), escribir en localStorage
-      // El GAS lo lee desde localStorage — único canal sin restricciones cross-origin
+      // SCAN_RESULT: viene del scanner.html (mismo origen github.io)
+      // Cerrar overlay y reenviar al GAS via postMessage al iframe hijo
       if (isSelfOrigin) {
         if (d.type === 'SCAN_RESULT' || d.type === 'SCAN_CANCEL' || d.type === 'SCAN_ERROR') {
           hideScannerBanner();
-          if (!offlineShell.classList.contains('show')) {
-            // Escribir resultado en localStorage para que el GAS lo consuma
-            try {
-              localStorage.setItem('dinet_scan_result', JSON.stringify({
-                type: d.type,
-                code: d.code || '',
-                targetId: d.targetId || '',
-                ts: Date.now()
-              }));
-            } catch(e) {}
+          if (offlineShell.classList.contains('show')) {
+            // Modo offline: el polling del shell lo maneja
+          } else {
+            // Modo online: reenviar al GAS (iframe hijo directo — parent→child sí funciona)
+            try { iframe.contentWindow.postMessage(d, '*'); } catch(e) {}
           }
         }
       }
