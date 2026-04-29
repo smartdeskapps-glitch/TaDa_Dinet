@@ -406,33 +406,21 @@
 
       // Enviar resultado
       try {
-        if (window.opener && !window.opener.closed) {
-          // Popup abierto desde index.html — enviar al opener con '*' (origen dinámico de GAS)
+        const isPopup = window.opener && !window.opener.closed && window.opener !== window;
+        if (isPopup) {
           window.opener.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
         } else {
-          // Dentro del iframe PWA — enviar al parent directamente
+          // iframe (offline shell o GAS) — parent se encarga de cerrar el overlay
           window.parent.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
         }
       } catch(e) {}
 
-      // NO hacer window.close() — en PWA instalada cierra toda la app.
-      // En popup real el opener lo cierra; aquí solo ocultamos la UI.
+      // Breve pantalla de confirmación — el parent ya ocultó el overlay
       setTimeout(() => {
-        // Si es popup real (tiene opener), intentar cerrar
-        if (window.opener && !window.opener.closed) {
+        if (window.opener && !window.opener.closed && window.opener !== window) {
           try { window.close(); } catch(e) {}
         }
-        // Si no se cerró (PWA standalone), navegar de vuelta
-        if (!document.hidden) {
-          document.body.innerHTML =
-            '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#080808;color:#fff;gap:12px;font-family:sans-serif">' +
-            '<div style="width:60px;height:60px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" width="32" height="32"><polyline points="20 6 9 17 4 12"/></svg></div>' +
-            '<div style="font-size:18px;font-weight:700">¡Código detectado!</div>' +
-            '<div style="font-size:13px;color:rgba(255,255,255,0.5)">Volviendo...</div>' +
-            '</div>';
-          setTimeout(() => { try { history.back(); } catch(e) {} }, 800);
-        }
+        // En iframe no hacemos nada más: el parent pone src='' y el iframe desaparece
       }, 400);
     }
 
@@ -441,13 +429,15 @@
       done = true;
       detenerNativo();
       detenerFallback();
+      // Detectar si somos popup real (tiene opener distinto de nosotros mismos)
+      const isPopup = window.opener && !window.opener.closed && window.opener !== window;
       try {
-        if (window.opener && !window.opener.closed) {
+        if (isPopup) {
           window.opener.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
           try { window.close(); } catch(e) {}
         } else {
+          // Estamos en iframe (offline shell o GAS) — avisar al parent
           window.parent.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
-          try { history.back(); } catch(e) {}
         }
       } catch(e) {
         try { history.back(); } catch(e2) {}
