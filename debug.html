@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug Scanner</title>
+  <style>
+    body { font-family: monospace; background: #0a0a0a; color: #fff; padding: 20px; margin: 0; }
+    .ok  { color: #34d399; }
+    .err { color: #f87171; }
+    .warn{ color: #fbbf24; }
+    .box { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 12px; margin: 8px 0; font-size: 13px; }
+    button { background: #7c3aed; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; cursor: pointer; margin: 4px; }
+    #log { background: #111; border: 1px solid #333; border-radius: 8px; padding: 12px; height: 200px; overflow-y: auto; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h2>🔍 Diagnóstico de Scanner</h2>
+
+  <div class="box" id="r1">⏳ Verificando contexto...</div>
+  <div class="box" id="r2">⏳ Verificando localStorage...</div>
+  <div class="box" id="r3">⏳ Verificando postMessage al parent...</div>
+  <div class="box" id="r4">⏳ Verificando cámara...</div>
+
+  <br>
+  <button onclick="testPostMessage()">📡 Test postMessage → parent</button>
+  <button onclick="testCamera()">📷 Test cámara</button>
+  <button onclick="testLS()">💾 Test localStorage</button>
+
+  <br><br>
+  <div id="log"></div>
+
+  <script>
+    function log(msg, cls) {
+      var d = document.getElementById('log');
+      var t = new Date().toLocaleTimeString();
+      d.innerHTML += '<div class="'+(cls||'')+'">['+t+'] '+msg+'</div>';
+      d.scrollTop = d.scrollHeight;
+    }
+
+    // 1. Contexto
+    var r1 = document.getElementById('r1');
+    var inIframe = window !== window.top;
+    var isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    r1.innerHTML = (inIframe ? '<span class="ok">✅</span>' : '<span class="warn">⚠️</span>') +
+      ' En iframe: <b>' + inIframe + '</b> | ' +
+      (isStandalone ? '<span class="ok">✅</span>' : '<span class="warn">⚠️</span>') +
+      ' PWA standalone: <b>' + isStandalone + '</b> | ' +
+      'Origen: <b>' + window.location.origin + '</b>';
+
+    // 2. localStorage
+    var r2 = document.getElementById('r2');
+    try {
+      localStorage.setItem('_test', '1');
+      localStorage.removeItem('_test');
+      r2.innerHTML = '<span class="ok">✅ localStorage funciona</span>';
+    } catch(e) {
+      r2.innerHTML = '<span class="err">❌ localStorage bloqueado: ' + e.message + '</span>';
+    }
+
+    // 3. postMessage al parent
+    var r3 = document.getElementById('r3');
+    if (!inIframe) {
+      r3.innerHTML = '<span class="warn">⚠️ No estoy en iframe — abre esta página dentro de la PWA</span>';
+    } else {
+      r3.innerHTML = '<span class="warn">⏳ Enviando postMessage al parent...</span>';
+      try {
+        window.parent.postMessage({ type: 'OPEN_SCANNER', targetId: 'debug-test', title: 'Test' }, '*');
+        r3.innerHTML = '<span class="ok">✅ postMessage enviado sin error</span>';
+        log('postMessage enviado al parent', 'ok');
+      } catch(e) {
+        r3.innerHTML = '<span class="err">❌ postMessage falló: ' + e.message + '</span>';
+      }
+    }
+
+    // 4. Cámara
+    var r4 = document.getElementById('r4');
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(function(stream) {
+        r4.innerHTML = '<span class="ok">✅ Cámara accesible</span>';
+        stream.getTracks().forEach(function(t) { t.stop(); });
+      })
+      .catch(function(e) {
+        r4.innerHTML = '<span class="err">❌ Cámara bloqueada: ' + e.name + ' — ' + e.message + '</span>';
+      });
+
+    // Escuchar mensajes del parent
+    window.addEventListener('message', function(event) {
+      log('📨 Mensaje recibido de: ' + event.origin + ' | data: ' + JSON.stringify(event.data), 'ok');
+    });
+
+    function testPostMessage() {
+      log('Enviando OPEN_SCANNER al parent...', 'warn');
+      try {
+        window.parent.postMessage({ type: 'OPEN_SCANNER', targetId: 'debug-test', title: 'Test Debug' }, '*');
+        log('Enviado sin error JS', 'ok');
+      } catch(e) {
+        log('ERROR: ' + e.message, 'err');
+      }
+    }
+
+    function testCamera() {
+      log('Solicitando cámara...', 'warn');
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(function(s) { log('✅ Cámara OK', 'ok'); s.getTracks().forEach(function(t){t.stop();}); })
+        .catch(function(e) { log('❌ Cámara: ' + e.name + ' — ' + e.message, 'err'); });
+    }
+
+    function testLS() {
+      log('Testing localStorage...', 'warn');
+      try {
+        localStorage.setItem('dinet_scan_request', JSON.stringify({ targetId: 'debug-test', title: 'Test', ts: Date.now() }));
+        log('✅ Escrito en localStorage', 'ok');
+        var v = localStorage.getItem('dinet_scan_request');
+        log('✅ Leído: ' + v, 'ok');
+        localStorage.removeItem('dinet_scan_request');
+      } catch(e) {
+        log('❌ localStorage error: ' + e.message, 'err');
+      }
+    }
+  </script>
+</body>
+</html>
