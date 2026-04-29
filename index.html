@@ -9,6 +9,7 @@
   <link rel="apple-touch-icon" href="icon-192.png"> 
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#7C3AED">
   <style>
     * { box-sizing: border-box; }
@@ -311,11 +312,11 @@
         <button class="os-btn-reconect" onclick="intentarReconectar()">↺ Reintentar</button>
       </div>
 
-    </div> <button class="os-fab-scanner" onclick="osAbrirScanner()">
+    </div>
+
+    <button class="os-fab-scanner" onclick="osAbrirScanner()">
       📷 Abrir Escáner
     </button>
-    </div> <div id="scanner-overlay">
-    <iframe id="scanner-iframe" src="" allow="camera; microphone" allowfullscreen></iframe>
   </div>
 
   <!-- Scanner en iframe overlay: window.parent apunta aqui correctamente -->
@@ -665,10 +666,36 @@
       if (isSelfOrigin) {
         if (d.type === 'SCAN_RESULT' || d.type === 'SCAN_CANCEL' || d.type === 'SCAN_ERROR') {
           hideScannerBanner();
-          try { iframe.contentWindow.postMessage(d, '*'); } catch(e) {}
+          // Si el offline shell está activo, el resultado ya fue procesado
+          // por el listener del offline shell — no reenviar al iframe GAS
+          if (!offlineShell.classList.contains('show')) {
+            try { iframe.contentWindow.postMessage(d, '*'); } catch(e) {}
+          }
         }
       }
     });
+    // ==================== FULLSCREEN ====================
+    // El manifest ya tiene display:fullscreen pero iOS/algunos Android
+    // requieren que el usuario lo dispare. Lo hacemos en el primer toque.
+    (function() {
+      function enterFullscreen() {
+        const el = document.documentElement;
+        const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if (req) req.call(el).catch(() => {});
+      }
+      if (!document.fullscreenElement) {
+        document.addEventListener('click',      enterFullscreen, { once: true });
+        document.addEventListener('touchstart', enterFullscreen, { once: true });
+      }
+      // Si el usuario sale con escape, volver a ofrecerlo al siguiente toque
+      document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement) {
+          document.addEventListener('click',      enterFullscreen, { once: true });
+          document.addEventListener('touchstart', enterFullscreen, { once: true });
+        }
+      });
+    })();
+
   </script>
 
 </body>
