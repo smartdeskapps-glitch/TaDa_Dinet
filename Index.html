@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Dinet Logistics OS</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png"> 
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#7C3AED">
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      overflow: hidden; background-color: #F8F9FB;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    
+    #splash-screen {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: linear-gradient(135deg, #1a0533 0%, #000000 100%);
+      z-index: 100000; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: opacity 0.6s ease-out, visibility 0.6s;
+    }
+    .splash-text { color: white; font-size: 38px; font-weight: 900; letter-spacing: -1px; margin-bottom: 5px; text-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    .splash-sub { color: #7C3AED; font-size: 14px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 40px; }
+    .loader { width: 150px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; position: relative; }
+    .loader::after { content: ''; position: absolute; top: 0; left: 0; width: 50%; height: 100%; background: #7C3AED; border-radius: 4px; animation: loadingBar 1s infinite ease-in-out alternate; }
+    @keyframes loadingBar { from { left: 0; width: 20%; } to { left: 80%; width: 20%; } }
+    .splash-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+    iframe {
+      width: 100%; height: 100%; border: none; display: block;
+      -webkit-overflow-scrolling: touch; will-change: transform;
+      transform: translateZ(0); backface-visibility: hidden;
+    }
+
+    #pwa-install-banner { display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 400px; z-index: 9999; animation: floatUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    .pwa-card { position: relative; display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: rgba(44, 62, 80, 0.9); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 24px; box-shadow: 0 20px 50px -10px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; }
+    .app-logo-text { font-size: 18px; font-weight: 800; color: #7C3AED; margin-right: 15px; display: flex; flex-direction: column; line-height: 1; }
+    .app-logo-text span { font-size: 10px; color: rgba(255,255,255,0.6); font-weight: 600; margin-top: 3px; }
+    .pwa-text h3 { margin: 0 0 2px 0; font-size: 15px; font-weight: 700; color: white; }
+    .pwa-text p { margin: 0; font-size: 12px; color: rgba(255,255,255,0.7); }
+    .btn-install { background: linear-gradient(135deg, #7C3AED 0%, #5b21b6 100%); color: white; border: none; padding: 10px 20px; border-radius: 50px; font-weight: 700; font-size: 13px; cursor: pointer; box-shadow: 0 5px 15px rgba(124,58,237,0.4); transition: transform 0.2s; white-space: nowrap; }
+    .btn-install:active { transform: scale(0.95); }
+    .btn-close { position: absolute; top: -10px; right: -10px; background: #2C3E50; color: white; border: 2px solid rgba(255,255,255,0.2); width: 26px; height: 26px; border-radius: 50%; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+    @keyframes floatUp { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+    #ios-prompt { display: none; position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 350px; background: #2C3E50; color: white; padding: 20px; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); text-align: center; z-index: 10000; font-size: 14px; border: 1px solid rgba(255,255,255,0.1); }
+    #ios-prompt::after { content: ''; position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); border-width: 10px 10px 0; border-style: solid; border-color: #2C3E50 transparent transparent transparent; }
+    .ios-icon { font-size: 18px; color: #7C3AED; margin: 0 3px; }
+
+    /* ── OFFLINE SHELL ── */
+    #offline-shell {
+      display: none; position: fixed; inset: 0;
+      background: linear-gradient(160deg, #1a0533 0%, #0d0d0d 100%);
+      z-index: 99999; flex-direction: column;
+      align-items: center; overflow-y: auto;
+      color: #fff; padding: 0;
+    }
+    #offline-shell.show { display: flex; }
+
+    /* Header */
+    .os-header {
+      width: 100%; padding: 16px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: rgba(0,0,0,0.3); backdrop-filter: blur(10px);
+      position: sticky; top: 0; z-index: 10; flex-shrink: 0;
+    }
+    .os-brand { font-size: 15px; font-weight: 800; letter-spacing: -.3px; }
+    .os-brand span { color: #a78bfa; }
+    .os-offline-badge {
+      background: rgba(217,119,6,.2); border: 1px solid rgba(217,119,6,.4);
+      color: #fbbf24; border-radius: 99px; padding: 3px 10px;
+      font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    }
+
+    /* Body */
+    .os-body {
+      width: 100%; max-width: 480px; padding: 24px 20px 40px;
+      display: flex; flex-direction: column; gap: 16px; flex: 1;
+    }
+
+    /* Info card */
+    .os-info {
+      background: rgba(124,58,237,.12); border: 1px solid rgba(124,58,237,.3);
+      border-radius: 12px; padding: 14px 16px;
+      font-size: 13px; color: rgba(255,255,255,.7); line-height: 1.5;
+      display: flex; gap: 10px; align-items: flex-start;
+    }
+    .os-info-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+
+    /* Section title */
+    .os-section {
+      font-size: 10px; font-weight: 700; letter-spacing: .14em;
+      text-transform: uppercase; color: rgba(255,255,255,.35);
+      padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+
+    /* EAN input row */
+    .os-ean-row { display: flex; gap: 8px; }
+    .os-inp {
+      flex: 1; background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.15); border-radius: 10px;
+      padding: 13px 14px; color: #fff; font-size: 16px;
+      outline: none; font-family: inherit;
+      transition: border-color .15s;
+    }
+    .os-inp:focus { border-color: #7c3aed; background: rgba(124,58,237,.1); }
+    .os-inp::placeholder { color: rgba(255,255,255,.25); font-size: 14px; }
+    .os-btn-scan {
+      background: rgba(124,58,237,.2); border: 1px solid rgba(124,58,237,.4);
+      border-radius: 10px; padding: 13px 16px; color: #a78bfa;
+      font-size: 20px; cursor: pointer; flex-shrink: 0;
+      transition: background .15s;
+    }
+    .os-btn-scan:active { background: rgba(124,58,237,.4); }
+
+    /* Product card */
+    .os-product-card {
+      display: none; background: rgba(5,150,105,.1);
+      border: 1px solid rgba(5,150,105,.3); border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .os-product-card.show { display: block; }
+    .os-product-name { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+    .os-product-meta { font-size: 11px; color: rgba(255,255,255,.45); font-family: monospace; }
+
+    /* Packs input */
+    .os-packs-wrap { display: flex; flex-direction: column; gap: 6px; }
+    .os-packs-label { font-size: 11px; font-weight: 700; color: rgba(255,255,255,.4); letter-spacing: .06em; text-transform: uppercase; }
+    .os-packs-inp {
+      background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.15);
+      border-radius: 10px; padding: 16px; color: #fff;
+      font-size: 32px; font-weight: 800; text-align: center;
+      outline: none; font-family: monospace; width: 100%;
+      transition: border-color .15s;
+    }
+    .os-packs-inp:focus { border-color: #7c3aed; }
+    .os-total-display {
+      background: #7c3aed; border-radius: 10px; padding: 14px;
+      text-align: center;
+    }
+    .os-total-num { font-size: 36px; font-weight: 900; color: #fff; line-height: 1; font-family: monospace; }
+    .os-total-label { font-size: 11px; color: rgba(255,255,255,.6); margin-top: 4px; }
+
+    /* Buttons */
+    .os-btn-row { display: flex; gap: 8px; }
+    .os-btn-primary {
+      flex: 1; background: #7c3aed; color: #fff; border: none;
+      padding: 15px; border-radius: 12px; font-size: 15px; font-weight: 700;
+      cursor: pointer; transition: background .15s, transform .1s;
+    }
+    .os-btn-primary:active { transform: scale(0.98); background: #6d28d9; }
+    .os-btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+    .os-btn-secondary {
+      background: rgba(255,255,255,.07); color: rgba(255,255,255,.6);
+      border: 1px solid rgba(255,255,255,.12); padding: 15px 20px;
+      border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .os-btn-secondary:active { background: rgba(255,255,255,.14); }
+
+    /* Queue list */
+    .os-queue { display: flex; flex-direction: column; gap: 8px; }
+    .os-queue-item {
+      background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+      border-radius: 10px; padding: 12px 14px;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    }
+    .os-queue-sku { font-family: monospace; font-size: 11px; color: #a78bfa; }
+    .os-queue-prod { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .os-queue-total { font-size: 18px; font-weight: 800; color: #34d399; flex-shrink: 0; font-family: monospace; }
+    .os-queue-del { background: none; border: none; color: rgba(255,255,255,.25); cursor: pointer; font-size: 16px; flex-shrink: 0; padding: 4px; }
+    .os-queue-del:active { color: #f87171; }
+
+    /* Reconectar */
+    .os-reconect {
+      background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+      border-radius: 12px; padding: 14px 16px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .os-reconect-text { font-size: 12px; color: rgba(255,255,255,.45); }
+    .os-btn-reconect {
+      background: rgba(124,58,237,.2); border: 1px solid rgba(124,58,237,.35);
+      color: #a78bfa; border-radius: 99px; padding: 8px 16px;
+      font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
+      transition: background .15s;
+    }
+    .os-btn-reconect:active { background: rgba(124,58,237,.4); }
+
+    /* ====== SCANNER IFRAME OVERLAY ====== */
+    /* scanner.html usa window.parent.postMessage — funciona porque es hijo directo.
+       Limpiar iframe.src detiene la camara sin llamadas extra. */
+    #scanner-overlay {
+      display: none; position: fixed; inset: 0;
+      z-index: 300000; background: #000;
+    }
+    #scanner-overlay.active { display: block; }
+    #scanner-iframe {
+      width: 100%; height: 100%; border: none; display: block;
+    }
+
+/* 👇 PEGA EL NUEVO CSS AQUÍ 👇 */
+  /* Botón flotante de Escáner (Solo Offline) */
+    .os-fab-scanner {
+      position: fixed !important;
+      bottom: 30px !important;
+      right: 20px !important;
+      background: #7c3aed !important;
+      color: #fff !important;
+      border: none !important;
+      border-radius: 50px !important;
+      padding: 16px 24px !important;
+      font-size: 15px !important;
+      font-weight: 700 !important;
+      box-shadow: 0 8px 25px rgba(124,58,237,0.5) !important;
+      cursor: pointer !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      z-index: 999999 !important;
+      transition: transform 0.15s ease, background 0.15s ease !important;
+    }
+    .os-fab-scanner:active {
+      transform: scale(0.95) !important;
+      background: #6d28d9 !important;
+    }
+    /* 👆 HASTA AQUÍ 👆 */
+
+
+  </style>
+</head>
+<body>
+
+  <div id="splash-screen">
+    <div class="splash-text">DINET</div>
+    <div class="splash-sub">LOGISTICS OS</div>
+    <div class="loader"></div>
+  </div>
+
+  <iframe
+    id="app-frame"
+    src="https://script.google.com/macros/s/AKfycbwTblGdNoqyyLcHlEtvqcXQ2OGyhwrQxTsmKWuKwHI2qSFMwDrKIDCPRseR_cX0vY4T/exec"
+    allow="camera; microphone; geolocation; fullscreen; display-capture; clipboard-read; clipboard-write; autoplay"
+    allowfullscreen
+    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-top-navigation-by-user-activation allow-presentation"
+  ></iframe>
+
+  <!-- Offline Shell — formulario de conteo funcional cuando GAS no carga -->
+  <div id="offline-shell">
+    <div class="os-header">
+      <div class="os-brand">DINET <span>Logistics</span></div>
+      <span class="os-offline-badge">📡 Offline</span>
+    </div>
+    <div class="os-body">
+
+      <div class="os-info">
+        <span class="os-info-icon">ℹ️</span>
+        <span>Sin internet, pero puedes seguir contando. Los registros se guardan aquí y se envían al servidor cuando se recupere la conexión.</span>
+      </div>
+
+      <div class="os-section">Escanear / buscar producto</div>
+
+      <div class="os-ean-row">
+        <input class="os-inp" id="os-ean" type="text" inputmode="numeric"
+          placeholder="EAN o código de barras..."
+          onkeydown="if(event.key==='Enter'){osResolverEAN()}"
+          oninput="osAutoResolver()"/>
+        <button class="os-btn-scan" onclick="osAbrirScanner()" title="Cámara">📷</button>
+        <button class="os-btn-scan" style="font-size:14px;padding:13px 12px" onclick="osResolverEAN()">OK</button>
+      </div>
+
+      <div class="os-product-card" id="os-product-card">
+        <div class="os-product-name" id="os-product-name">—</div>
+        <div class="os-product-meta">
+          SKU: <span id="os-product-sku">—</span> &nbsp;·&nbsp;
+          Multiplicador: <span id="os-product-mult">—</span>
+        </div>
+      </div>
+
+      <div class="os-packs-wrap" id="os-packs-wrap" style="display:none">
+        <div class="os-packs-label">Packs contados</div>
+        <input class="os-packs-inp" id="os-packs" type="number" min="0"
+          placeholder="0" oninput="osCalcTotal()" inputmode="numeric"/>
+        <div class="os-total-display">
+          <div class="os-total-num" id="os-total">0</div>
+          <div class="os-total-label" id="os-formula">— unidades totales</div>
+        </div>
+      </div>
+
+      <div class="os-btn-row" id="os-btn-row" style="display:none">
+        <button class="os-btn-secondary" onclick="osLimpiar()">Limpiar</button>
+        <button class="os-btn-primary" onclick="osAgregar()">+ Agregar y seguir</button>
+      </div>
+
+      <!-- Cola pendiente -->
+      <div id="os-queue-section" style="display:none">
+        <div class="os-section" style="display:flex;justify-content:space-between;align-items:center">
+          <span>En cola (<span id="os-queue-count">0</span>)</span>
+          <button onclick="osLimpiarCola()" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:11px;cursor:pointer">Limpiar todo</button>
+        </div>
+        <div class="os-queue" id="os-queue-list"></div>
+      </div>
+
+      <div class="os-reconect">
+        <span class="os-reconect-text">Cuando vuelva internet, los datos se enviarán automáticamente.</span>
+        <button class="os-btn-reconect" onclick="intentarReconectar()">↺ Reintentar</button>
+      </div>
+
+    </div> <button class="os-fab-scanner" onclick="osAbrirScanner()">
+      📷 Abrir Escáner
+    </button>
+    </div> <div id="scanner-overlay">
+    <iframe id="scanner-iframe" src="" allow="camera; microphone" allowfullscreen></iframe>
+  </div>
+
+  <!-- Scanner en iframe overlay: window.parent apunta aqui correctamente -->
+  <div id="scanner-overlay">
+    <iframe id="scanner-iframe" src="" allow="camera; microphone" allowfullscreen></iframe>
+  </div>
+
+  <div id="pwa-install-banner">
+    <div class="pwa-card">
+      <button class="btn-close" onclick="cerrarBanner()">x</button>
+      <div style="display: flex; align-items: center;">
+        <div class="app-logo-text">DINET<span>LOGISTICS OS</span></div>
+        <div class="pwa-text"><h3>Instalar App</h3><p>WMS & Operaciones</p></div>
+      </div>
+      <button class="btn-install" id="btn-install-trigger">Instalar</button>
+    </div>
+  </div>
+
+  <div id="ios-prompt">
+    Para instalar <strong>Dinet Logistics OS</strong>:<br><br>
+    1. Toca el boton <strong>Compartir</strong> <span class="ios-icon">Compartir</span><br>
+    2. Selecciona <strong>"Agregar a Inicio"</strong> <span class="ios-icon">+</span>
+    <div style="margin-top:15px;"><button onclick="document.getElementById('ios-prompt').style.display='none'" style="border:none; background:#7C3AED; color:white; padding:8px 20px; border-radius:50px; font-weight:bold;">Entendido</button></div>
+  </div>
+
+  <script>
+    // ==================== SPLASH ====================
+    const iframe = document.getElementById('app-frame');
+    const splash = document.getElementById('splash-screen');
+    const offlineShell = document.getElementById('offline-shell');
+
+    let appCargada = false;
+
+    const hideSplash = () => {
+      splash.style.opacity = '0';
+      setTimeout(() => { splash.style.visibility = 'hidden'; splash.style.display = 'none'; }, 600);
+    };
+
+    iframe.onload = () => {
+      appCargada = true;
+      clearTimeout(splashTimeout);
+      offlineShell.classList.remove('show');
+      setTimeout(hideSplash, 500);
+    };
+
+    const splashTimeout = setTimeout(() => {
+      hideSplash();
+      if (!navigator.onLine && !appCargada) mostrarOfflineShell();
+    }, 8000);
+
+    setTimeout(hideSplash, 4000);
+    setTimeout(() => { splash.classList.add('splash-hidden'); }, 6000);
+
+    // ── Online / Offline ───────────────────────────────────────
+    window.addEventListener('offline', () => {
+      mostrarOfflineShell(); // Le quitamos el if para que avise siempre
+    });
+    window.addEventListener('online', () => {
+      offlineShell.classList.remove('show');
+      if (!appCargada) { iframe.src = iframe.src; }
+    });
+
+    function mostrarOfflineShell() {
+      // Borramos la línea de "if (appCargada) return;"
+      offlineShell.classList.add('show');
+      osCargarMConteo();
+      osRenderizarCola();
+    }
+
+    function intentarReconectar() {
+      if (navigator.onLine) {
+        offlineShell.classList.remove('show');
+        iframe.src = iframe.src;
+        splash.style.display = 'flex';
+        splash.style.opacity  = '1';
+        splash.style.visibility = 'visible';
+        setTimeout(hideSplash, 5000);
+      } else {
+        const btn = document.querySelector('.os-btn-reconect');
+        if (btn) { btn.textContent = 'Sin red aún...'; setTimeout(() => { btn.textContent = '↺ Reintentar'; }, 2000); }
+      }
+    }
+
+    // ══════════════════════════════════════════════
+    // MOTOR CONTEO OFFLINE
+    // Lee MCONTEO del mismo localStorage que usa la app GAS
+    // Escribe en ds_conteo_historial_v1 (mismo key que la app)
+    // ══════════════════════════════════════════════
+    const OS_BUFFER_KEY  = 'ds_conteo_historial_v1';
+    const OS_MCONTEO_KEY = 'ds_mconteo_cache_v1'; // clave separada para el catálogo
+
+    var _osMConteo    = null; // catálogo cargado
+    var _osEANIdx     = {};
+    var _osProducto   = null; // producto actualmente seleccionado
+    var _osEanTimer   = null;
+
+    // Intentar cargar MCONTEO desde caché persistida por la app GAS
+    function osCargarMConteo() {
+      try {
+        // La app GAS no persiste MCONTEO en localStorage (lo tiene en memoria)
+        // Intentar desde nuestra clave; si no hay, el usuario debe buscar por SKU manual
+        var raw = localStorage.getItem(OS_MCONTEO_KEY);
+        if (raw) {
+          var data = JSON.parse(raw);
+          _osMConteo = data;
+          _osEANIdx  = {};
+          data.forEach(function(item) { _osEANIdx[item.ean] = item; });
+        }
+      } catch(e) { _osMConteo = null; }
+    }
+
+    // Cuando la app GAS está online, ella guarda el MCONTEO para uso offline
+    // Escuchar mensajes del iframe para persistirlo
+    window.addEventListener('message', function(event) {
+      if (event.data && event.data.type === 'MCONTEO_CACHE' && event.data.data) {
+        try {
+          localStorage.setItem(OS_MCONTEO_KEY, JSON.stringify(event.data.data));
+          _osMConteo = event.data.data;
+          _osEANIdx  = {};
+          event.data.data.forEach(function(item) { _osEANIdx[item.ean] = item; });
+        } catch(e) {}
+      }
+    });
+
+    function osAutoResolver() {
+      clearTimeout(_osEanTimer);
+      var ean = document.getElementById('os-ean').value.trim();
+      if (!ean || ean.length < 8) return;
+      _osEanTimer = setTimeout(osResolverEAN, 300);
+    }
+
+    function osResolverEAN() {
+      clearTimeout(_osEanTimer);
+      var raw = document.getElementById('os-ean').value.trim();
+      if (!raw) return;
+      var normEAN = /[eE]/.test(raw) ? Math.round(Number(raw)).toString() : raw.replace(/\.0+$/, '');
+
+      if (_osMConteo && _osEANIdx[normEAN]) {
+        var item = _osEANIdx[normEAN];
+        osSetProducto(item.ean, item.sku, item.sap || '', item.producto, item.multiplicador);
+      } else {
+        // No hay catálogo o EAN no encontrado — modo manual
+        osSetProductoManual(normEAN);
+      }
+    }
+
+    function osSetProducto(ean, sku, sap, producto, mult) {
+      _osProducto = { ean: ean, sku: sku, sap: sap, producto: producto, multiplicador: Number(mult) || 1 };
+      document.getElementById('os-product-name').textContent = producto;
+      document.getElementById('os-product-sku').textContent  = sku;
+      document.getElementById('os-product-mult').textContent = 'x' + (Number(mult) || 1);
+      document.getElementById('os-product-card').classList.add('show');
+      document.getElementById('os-packs-wrap').style.display = '';
+      document.getElementById('os-btn-row').style.display     = '';
+      document.getElementById('os-packs').value = '';
+      document.getElementById('os-total').textContent = '0';
+      document.getElementById('os-formula').textContent = '— unidades totales';
+      document.getElementById('os-packs').focus();
+    }
+
+    function osSetProductoManual(ean) {
+      // Sin catálogo: crear entrada manual con EAN como SKU, mult=1
+      _osProducto = { ean: ean, sku: ean, sap: '', producto: 'EAN: ' + ean + ' (sin catálogo)', multiplicador: 1 };
+      document.getElementById('os-product-name').textContent = 'EAN: ' + ean + ' · Ingreso manual';
+      document.getElementById('os-product-sku').textContent  = ean;
+      document.getElementById('os-product-mult').textContent = 'x1';
+      document.getElementById('os-product-card').classList.add('show');
+      document.getElementById('os-packs-wrap').style.display = '';
+      document.getElementById('os-btn-row').style.display     = '';
+      document.getElementById('os-packs').value = '';
+      document.getElementById('os-total').textContent = '0';
+      document.getElementById('os-formula').textContent = '— unidades totales';
+      document.getElementById('os-packs').focus();
+    }
+
+    function osCalcTotal() {
+      if (!_osProducto) return;
+      var packs = Number(document.getElementById('os-packs').value || 0);
+      var mult  = _osProducto.multiplicador || 1;
+      var total = packs * mult;
+      document.getElementById('os-total').textContent   = total;
+      document.getElementById('os-formula').textContent = packs > 0
+        ? packs + ' packs × ' + mult + ' = ' + total + ' und'
+        : '— unidades totales';
+    }
+
+    function osLimpiar() {
+      _osProducto = null;
+      document.getElementById('os-ean').value = '';
+      document.getElementById('os-packs').value = '';
+      document.getElementById('os-product-card').classList.remove('show');
+      document.getElementById('os-packs-wrap').style.display = 'none';
+      document.getElementById('os-btn-row').style.display     = 'none';
+      document.getElementById('os-total').textContent   = '0';
+      document.getElementById('os-formula').textContent = '— unidades totales';
+      document.getElementById('os-ean').focus();
+    }
+
+    function osAgregar() {
+      if (!_osProducto) return;
+      var packs = Number(document.getElementById('os-packs').value || 0);
+      if (packs <= 0) { document.getElementById('os-packs').focus(); return; }
+      var mult  = _osProducto.multiplicador || 1;
+      var total = packs * mult;
+
+      // Leer buffer actual
+      var buffer = [];
+      try { buffer = JSON.parse(localStorage.getItem(OS_BUFFER_KEY) || '[]'); } catch(e) {}
+
+      buffer.push({
+        ean: _osProducto.ean, sku: _osProducto.sku, sap: _osProducto.sap,
+        producto: _osProducto.producto, packs: packs, und: total,
+        multiplicador: mult, total: total, ubicacion: '', _ts: Date.now()
+      });
+
+      localStorage.setItem(OS_BUFFER_KEY, JSON.stringify(buffer));
+      osRenderizarCola();
+      osLimpiar();
+    }
+
+    function osRenderizarCola() {
+      var buffer = [];
+      try { buffer = JSON.parse(localStorage.getItem(OS_BUFFER_KEY) || '[]'); } catch(e) {}
+
+      var section = document.getElementById('os-queue-section');
+      var list    = document.getElementById('os-queue-list');
+      var count   = document.getElementById('os-queue-count');
+
+      if (!buffer.length) { section.style.display = 'none'; return; }
+
+      section.style.display = '';
+      count.textContent = buffer.length;
+      list.innerHTML = buffer.slice().reverse().map(function(item, revIdx) {
+        var idx = buffer.length - 1 - revIdx;
+        return '<div class="os-queue-item">' +
+          '<div style="flex:1;min-width:0">' +
+            '<div class="os-queue-sku">' + (item.ean || item.sku) + '</div>' +
+            '<div class="os-queue-prod">' + item.producto + '</div>' +
+          '</div>' +
+          '<div class="os-queue-total">+' + item.total + '</div>' +
+          '<button class="os-queue-del" onclick="osEliminarItem(' + idx + ')">✕</button>' +
+        '</div>';
+      }).join('');
+    }
+
+    function osEliminarItem(idx) {
+      var buffer = [];
+      try { buffer = JSON.parse(localStorage.getItem(OS_BUFFER_KEY) || '[]'); } catch(e) {}
+      buffer.splice(idx, 1);
+      localStorage.setItem(OS_BUFFER_KEY, JSON.stringify(buffer));
+      osRenderizarCola();
+    }
+
+    function osLimpiarCola() {
+      if (!confirm('¿Eliminar todos los conteos en cola?')) return;
+      localStorage.removeItem(OS_BUFFER_KEY);
+      osRenderizarCola();
+    }
+
+    // Scanner desde el offline shell — usa el mismo overlay del index
+    function osAbrirScanner() {
+      showScannerBanner('os-ean-target', 'Escanea el EAN del producto');
+    }
+    // Recibir resultado del scanner y ponerlo en el input
+    var _origScannerHandler = null;
+    function _patchScannerForOffline() {
+      // El handler principal de postMessage ya maneja SCAN_RESULT
+      // Solo necesitamos interceptar cuando targetId === 'os-ean-target'
+    }
+
+    // Extender el handler existente de postMessage para capturar el resultado offline
+    window.addEventListener('message', function(event) {
+      var d = event.data;
+      if (!d || d.type !== 'SCAN_RESULT') return;
+      if (d.targetId === 'os-ean-target' && offlineShell.classList.contains('show')) {
+        document.getElementById('os-ean').value = d.code || '';
+        osResolverEAN();
+      }
+    });
+
+    // ==================== PWA ====================
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+    }
+    let deferredPrompt;
+    const banner = document.getElementById('pwa-install-banner');
+    const btnInstall = document.getElementById('btn-install-trigger');
+    const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    if (!isStandalone) {
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault(); deferredPrompt = e; banner.style.display = 'block';
+      });
+      btnInstall.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          deferredPrompt = null; banner.style.display = 'none';
+        }
+      });
+      if (isIos) setTimeout(() => { document.getElementById('ios-prompt').style.display = 'block'; }, 3000);
+    }
+    function cerrarBanner() { banner.style.display = 'none'; }
+
+    // ==================== SCANNER ====================
+    // GAS envia OPEN_SCANNER -> abrimos scanner.html en iframe overlay (no popup).
+    // window.parent en scanner.html apunta a este documento -> postMessage funciona.
+    // Al cerrar: src='' detiene la camara sin necesidad de APIs adicionales.
+
+    const scanOverlay = document.getElementById('scanner-overlay');
+    const scanIframe  = document.getElementById('scanner-iframe');
+
+    function showScannerBanner(targetId, title) {
+      const url = './scanner.html'
+        + '?target=' + encodeURIComponent(targetId)
+        + '&title='  + encodeURIComponent(title || 'Escanea el codigo');
+      scanIframe.src = url;
+      scanOverlay.classList.add('active');
+    }
+
+    function hideScannerBanner() {
+      scanOverlay.classList.remove('active');
+      scanIframe.src = '';
+    }
+
+    const ORIGIN_SELF = window.location.origin;
+    const KNOWN_TYPES = new Set([
+      'OPEN_SCANNER', 'CLOSE_SCANNER',
+      'SCAN_RESULT', 'SCAN_CANCEL', 'SCAN_ERROR'
+    ]);
+
+    window.addEventListener('message', (event) => {
+      const isGasOrigin = event.origin.endsWith('googleusercontent.com') || event.origin === 'https://script.google.com';
+      const isSelfOrigin = event.origin === ORIGIN_SELF;
+
+      if (!isGasOrigin && !isSelfOrigin) return;
+
+      const d = event.data;
+      if (!d || typeof d !== 'object' || !d.type) return;
+      if (!KNOWN_TYPES.has(d.type)) return;
+
+      if (isGasOrigin) {
+        if (d.type === 'OPEN_SCANNER')  { showScannerBanner(d.targetId, d.title); return; }
+        if (d.type === 'CLOSE_SCANNER') { hideScannerBanner(); return; }
+      }
+
+      if (isSelfOrigin) {
+        if (d.type === 'SCAN_RESULT' || d.type === 'SCAN_CANCEL' || d.type === 'SCAN_ERROR') {
+          hideScannerBanner();
+          try { iframe.contentWindow.postMessage(d, '*'); } catch(e) {}
+        }
+      }
+    });
+  </script>
+
+</body>
+</html>

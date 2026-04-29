@@ -1,0 +1,31 @@
+{
+  "name": "Dinet Tada",
+  "short_name": "Dinet",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "display_override": [
+    "window-controls-overlay",
+    "fullscreen"
+  ],
+  "background_color": "#0a0a0a",
+  "theme_color": "#7C3AED",
+  "orientation": "portrait-primary",
+  "categories": [
+    "games",
+    "productivity",
+    "utilities"
+  ],
+  "description": "Logistics WMS",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
