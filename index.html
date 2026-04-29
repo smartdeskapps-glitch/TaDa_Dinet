@@ -601,6 +601,24 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
     }
+
+    // ── POLLING localStorage → scanner ──────────────────────────
+    // El GAS no puede hacer postMessage hacia afuera (Google lo bloquea).
+    // En cambio escribe en localStorage; el Index lo lee cada 300ms y abre el overlay.
+    (function() {
+      var _lastScanTs = 0;
+      setInterval(function() {
+        try {
+          var raw = localStorage.getItem('dinet_scan_request');
+          if (!raw) return;
+          var req = JSON.parse(raw);
+          if (!req || !req.ts || req.ts <= _lastScanTs) return;
+          _lastScanTs = req.ts;
+          localStorage.removeItem('dinet_scan_request');
+          showScannerBanner(req.targetId, req.title);
+        } catch(e) {}
+      }, 300);
+    })();
     let deferredPrompt;
     const banner = document.getElementById('pwa-install-banner');
     const btnInstall = document.getElementById('btn-install-trigger');
