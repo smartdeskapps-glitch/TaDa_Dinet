@@ -405,14 +405,9 @@
       detenerNativo();
       detenerFallback();
 
-      // Enviar resultado
+      // Enviar resultado al parent (Index de GitHub Pages — mismo contexto, no bloqueado)
       try {
-        if (isIframe) {
-          window.parent.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
-        } else {
-          window.opener.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
-          setTimeout(() => { try { window.close(); } catch(e) {} }, 400);
-        }
+        window.parent.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
       } catch(e) {}
     }
 
@@ -422,12 +417,7 @@
       detenerNativo();
       detenerFallback();
       try {
-        if (isIframe) {
-          window.parent.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
-        } else {
-          window.opener.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
-          try { window.close(); } catch(e) {}
-        }
+        window.parent.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
       } catch(e) {}
     }
 
