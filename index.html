@@ -649,23 +649,31 @@
       'SCAN_RESULT', 'SCAN_CANCEL', 'SCAN_ERROR'
     ]);
 
-    window.addEventListener('message', (event) => {
+        window.addEventListener('message', (event) => {
       const isSelfOrigin = event.origin === ORIGIN_SELF;
 
       const d = event.data;
       if (!d || typeof d !== 'object' || !d.type) return;
       if (!KNOWN_TYPES.has(d.type)) return;
 
-      // OPEN/CLOSE_SCANNER: acepta cualquier origen (GAS corre cross-origin)
       if (d.type === 'OPEN_SCANNER')  { showScannerBanner(d.targetId, d.title); return; }
       if (d.type === 'CLOSE_SCANNER') { hideScannerBanner(); return; }
 
-      // SCAN_RESULT/CANCEL/ERROR: solo desde scanner.html (mismo origen GitHub Pages)
+      // SCAN_RESULT: viene del scanner.html (mismo origen), escribir en localStorage
+      // El GAS lo lee desde localStorage — único canal sin restricciones cross-origin
       if (isSelfOrigin) {
         if (d.type === 'SCAN_RESULT' || d.type === 'SCAN_CANCEL' || d.type === 'SCAN_ERROR') {
           hideScannerBanner();
           if (!offlineShell.classList.contains('show')) {
-            try { iframe.contentWindow.postMessage(d, '*'); } catch(e) {}
+            // Escribir resultado en localStorage para que el GAS lo consuma
+            try {
+              localStorage.setItem('dinet_scan_result', JSON.stringify({
+                type: d.type,
+                code: d.code || '',
+                targetId: d.targetId || '',
+                ts: Date.now()
+              }));
+            } catch(e) {}
           }
         }
       }
