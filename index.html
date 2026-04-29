@@ -632,7 +632,8 @@
     function showScannerBanner(targetId, title) {
       const url = './scanner.html'
         + '?target=' + encodeURIComponent(targetId)
-        + '&title='  + encodeURIComponent(title || 'Escanea el codigo');
+        + '&title='  + encodeURIComponent(title || 'Escanea el codigo')
+        + '&mode=iframe';
       scanIframe.src = url;
       scanOverlay.classList.add('active');
     }
