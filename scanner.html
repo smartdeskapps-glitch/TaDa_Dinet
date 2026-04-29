@@ -216,6 +216,7 @@
     const params   = new URLSearchParams(window.location.search);
     const targetId = params.get('target') || '';
     const title    = params.get('title')  || 'Escanea el código';
+    const isIframe = params.get('mode')   === 'iframe'; // explícito, no inferido
     document.getElementById('title').textContent = title;
 
     let done     = false;
@@ -406,22 +407,13 @@
 
       // Enviar resultado
       try {
-        const isPopup = window.opener && !window.opener.closed && window.opener !== window;
-        if (isPopup) {
-          window.opener.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
-        } else {
-          // iframe (offline shell o GAS) — parent se encarga de cerrar el overlay
+        if (isIframe) {
           window.parent.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
+        } else {
+          window.opener.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
+          setTimeout(() => { try { window.close(); } catch(e) {} }, 400);
         }
       } catch(e) {}
-
-      // Breve pantalla de confirmación — el parent ya ocultó el overlay
-      setTimeout(() => {
-        if (window.opener && !window.opener.closed && window.opener !== window) {
-          try { window.close(); } catch(e) {}
-        }
-        // En iframe no hacemos nada más: el parent pone src='' y el iframe desaparece
-      }, 400);
     }
 
     // ── Cancelar ─────────────────────────────────────────────────
@@ -429,19 +421,14 @@
       done = true;
       detenerNativo();
       detenerFallback();
-      // Detectar si somos popup real (tiene opener distinto de nosotros mismos)
-      const isPopup = window.opener && !window.opener.closed && window.opener !== window;
       try {
-        if (isPopup) {
+        if (isIframe) {
+          window.parent.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
+        } else {
           window.opener.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
           try { window.close(); } catch(e) {}
-        } else {
-          // Estamos en iframe (offline shell o GAS) — avisar al parent
-          window.parent.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
         }
-      } catch(e) {
-        try { history.back(); } catch(e2) {}
-      }
+      } catch(e) {}
     }
 
     iniciar();
