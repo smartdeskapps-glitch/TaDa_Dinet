@@ -405,15 +405,9 @@
       detenerNativo();
       detenerFallback();
 
-      // Enviar resultado: si somos popup -> window.opener, si somos iframe -> window.parent
       try {
-        const target = (window.opener && !window.opener.closed) ? window.opener : window.parent;
-        target.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
+        window.parent.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
       } catch(e) {}
-      // Cerrar popup si aplica
-      if (window.opener && !window.opener.closed) {
-        setTimeout(() => { try { window.close(); } catch(e) {} }, 600);
-      }
     }
 
     // ── Cancelar ─────────────────────────────────────────────────
@@ -421,13 +415,7 @@
       done = true;
       detenerNativo();
       detenerFallback();
-      try {
-        const target = (window.opener && !window.opener.closed) ? window.opener : window.parent;
-        target.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
-      } catch(e) {}
-      if (window.opener && !window.opener.closed) {
-        setTimeout(() => { try { window.close(); } catch(e) {} }, 200);
-      }
+      try { window.parent.postMessage({ type: 'SCAN_CANCEL', targetId }, '*'); } catch(e) {}
     }
 
     iniciar();
