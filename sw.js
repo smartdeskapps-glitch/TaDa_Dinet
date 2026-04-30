@@ -6,7 +6,7 @@
 //   • html5-qrcode CDN → Cache First (se cachea en primer uso)
 // ============================================================
 
-const CACHE_NAME    = 'dinet-shell-v16';
+const CACHE_NAME    = 'dinet-shell-v14';
 const OFFLINE_PAGE  = './index.html';
 
 // Assets que se precargan en install — el shell mínimo para abrir offline
@@ -90,9 +90,9 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
-      // No está en caché → buscar en red y cachear para la próxima
       return fetch(event.request).then(response => {
-        if (response && response.status === 200) {
+        // Solo cachear https — ignorar chrome-extension y otros esquemas
+        if (response && response.status === 200 && url.protocol === 'https:') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
