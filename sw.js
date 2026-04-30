@@ -6,7 +6,7 @@
 //   • html5-qrcode CDN → Cache First (se cachea en primer uso)
 // ============================================================
 
-const CACHE_NAME    = 'dinet-shell-v16';
+const CACHE_NAME    = 'dinet-shell-v17';
 const OFFLINE_PAGE  = './index.html';
 
 // Assets que se precargan en install — el shell mínimo para abrir offline
