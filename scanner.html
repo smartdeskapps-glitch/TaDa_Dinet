@@ -210,7 +210,15 @@
   <button id="btn-cancel" onclick="cancelar()">Cancelar</button>
   <div id="method-badge">–</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode/minified/html5-qrcode.min.js"></script>
+  <script>
+    // Cargar html5-qrcode desde caché del SW o CDN
+    (function() {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode/minified/html5-qrcode.min.js';
+      s.onerror = function() { console.warn('[Scanner] CDN no disponible, modo nativo only'); };
+      document.head.appendChild(s);
+    })();
+  </script>
 
   <script>
     const params   = new URLSearchParams(window.location.search);
@@ -321,8 +329,16 @@
         }, 1500);
 
       } catch(err) {
+        console.error('[Scanner] nativo falló:', err.name, err.message);
+        statusEl.textContent = 'Error nativo: ' + err.name + ' — intentando fallback...';
         detenerNativo();
-        await iniciarFallback();
+        // Solo usar fallback si Html5Qrcode está disponible (CDN cargó)
+        if (typeof Html5Qrcode !== 'undefined') {
+          await iniciarFallback();
+        } else {
+          statusEl.textContent = 'Error: ' + err.name + ' — ' + err.message;
+          statusEl.classList.add('error');
+        }
       }
     }
 
@@ -406,7 +422,9 @@
       detenerFallback();
 
       try {
-        window.parent.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
+        const dest = (window.opener && !window.opener.closed) ? window.opener : window.parent;
+        dest.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
+        if (window.opener && !window.opener.closed) setTimeout(() => { try { window.close(); } catch(e){} }, 500);
       } catch(e) {}
     }
 
@@ -415,7 +433,11 @@
       done = true;
       detenerNativo();
       detenerFallback();
-      try { window.parent.postMessage({ type: 'SCAN_CANCEL', targetId }, '*'); } catch(e) {}
+      try {
+        const dest = (window.opener && !window.opener.closed) ? window.opener : window.parent;
+        dest.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
+        if (window.opener && !window.opener.closed) setTimeout(() => { try { window.close(); } catch(e){} }, 200);
+      } catch(e) {}
     }
 
     iniciar();
