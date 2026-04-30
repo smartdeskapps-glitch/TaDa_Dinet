@@ -405,10 +405,15 @@
       detenerNativo();
       detenerFallback();
 
-      // Enviar resultado al parent (Index de GitHub Pages — mismo contexto, no bloqueado)
+      // Enviar resultado: si somos popup -> window.opener, si somos iframe -> window.parent
       try {
-        window.parent.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
+        const target = (window.opener && !window.opener.closed) ? window.opener : window.parent;
+        target.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
       } catch(e) {}
+      // Cerrar popup si aplica
+      if (window.opener && !window.opener.closed) {
+        setTimeout(() => { try { window.close(); } catch(e) {} }, 600);
+      }
     }
 
     // ── Cancelar ─────────────────────────────────────────────────
@@ -417,8 +422,12 @@
       detenerNativo();
       detenerFallback();
       try {
-        window.parent.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
+        const target = (window.opener && !window.opener.closed) ? window.opener : window.parent;
+        target.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
       } catch(e) {}
+      if (window.opener && !window.opener.closed) {
+        setTimeout(() => { try { window.close(); } catch(e) {} }, 200);
+      }
     }
 
     iniciar();
