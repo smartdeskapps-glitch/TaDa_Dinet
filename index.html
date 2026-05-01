@@ -614,8 +614,9 @@
     }
 
     // ── POLLING localStorage → scanner ──────────────────────────
-    // El GAS no puede hacer postMessage hacia afuera (Google lo bloquea).
-    // En cambio escribe en localStorage; el Index lo lee cada 300ms y abre el overlay.
+    // Canal GAS→index: GAS escribe 'dinet_scan_request', index lo lee cada 200ms.
+    // Google Warden bloquea postMessage desde/hacia el iframe del GAS — localStorage
+    // es el único canal fiable entre origins distintos en el mismo browser.
     (function() {
       var _lastScanTs = 0;
       setInterval(function() {
@@ -628,8 +629,25 @@
           localStorage.removeItem('dinet_scan_request');
           showScannerBanner(req.targetId, req.title);
         } catch(e) {}
-      }, 300);
+      }, 200); // 200ms para respuesta más rápida
     })();
+
+    // ── POLLING dinet_scan_close — GAS pide cerrar el overlay ──
+    (function() {
+      var _lastCloseTs = 0;
+      setInterval(function() {
+        try {
+          var raw = localStorage.getItem('dinet_scan_close');
+          if (!raw) return;
+          var ts = Number(raw);
+          if (!ts || ts <= _lastCloseTs) return;
+          _lastCloseTs = ts;
+          localStorage.removeItem('dinet_scan_close');
+          hideScannerBanner();
+        } catch(e) {}
+      }, 200);
+    })();
+
     let deferredPrompt;
     const banner = document.getElementById('pwa-install-banner');
     const btnInstall = document.getElementById('btn-install-trigger');
@@ -651,10 +669,6 @@
     function cerrarBanner() { banner.style.display = 'none'; }
 
     // ==================== SCANNER ====================
-    // GAS envia OPEN_SCANNER -> abrimos scanner.html en iframe overlay (no popup).
-    // window.parent en scanner.html apunta a este documento -> postMessage funciona.
-    // Al cerrar: src='' detiene la camara sin necesidad de APIs adicionales.
-
     const scanOverlay = document.getElementById('scanner-overlay');
     const scanIframe  = document.getElementById('scanner-iframe');
 
@@ -669,74 +683,47 @@
 
     function hideScannerBanner() {
       scanOverlay.classList.remove('active');
-      scanIframe.src = '';
+      scanIframe.src = ''; // detiene cámara inmediatamente
     }
 
+    // ── Recibir resultado del scanner ──────────────────────────────
+    // scanner.html → postMessage → index.html (mismo origen github.io ✓ no bloqueado)
+    // index.html → localStorage → GAS (polling cada 200ms en el GAS)
     window.addEventListener('message', (event) => {
-      console.log('[INDEX DEBUG] message recibido:', event.origin, JSON.stringify(event.data));
-    });
-    // ── FIN DEBUG ──
-
-    const ORIGIN_SELF = window.location.origin;
-    const KNOWN_TYPES = new Set([
-      'OPEN_SCANNER', 'CLOSE_SCANNER',
-      'SCAN_RESULT', 'SCAN_CANCEL', 'SCAN_ERROR'
-    ]);
-
-    window.addEventListener('message', (event) => {
-      const isSelfOrigin = event.origin === ORIGIN_SELF;
-
       const d = event.data;
       if (!d || typeof d !== 'object' || !d.type) return;
-      if (!KNOWN_TYPES.has(d.type)) return;
 
-      // OPEN_SCANNER: el GAS no puede postMessage hacia afuera (Google Warden lo bloquea).
-      // Este path queda como fallback por si acaso, pero el canal real es localStorage polling.
-      if (d.type === 'OPEN_SCANNER') {
-        showScannerBanner(d.targetId, d.title);
+      const isScanResult = d.type === 'SCAN_RESULT' || d.type === 'SCAN_CANCEL';
+      const isSameOrigin = event.origin === window.location.origin;
+
+      if (isScanResult && isSameOrigin) {
+        hideScannerBanner();
+        // Escribir resultado en localStorage — el GAS hace polling y lo recoge
+        try {
+          localStorage.setItem('dinet_scan_result', JSON.stringify({
+            type:     d.type,
+            targetId: d.targetId,
+            code:     d.code || '',
+            ts:       Date.now()
+          }));
+        } catch(e) {
+          console.error('[Scanner] No se pudo escribir resultado en localStorage:', e);
+        }
+        // También manejar el offline shell si está activo
+        if (offlineShell.classList.contains('show') && d.type === 'SCAN_RESULT') {
+          try {
+            document.getElementById('os-ean').value = d.code || '';
+            osResolverEAN();
+          } catch(e) {}
+        }
         return;
       }
-      if (d.type === 'CLOSE_SCANNER') { hideScannerBanner(); return; }
 
-      // SCAN_RESULT viene del scanner.html (mismo origen github.io — nunca bloqueado)
-      if (isSelfOrigin) {
-        if (d.type === 'SCAN_RESULT' || d.type === 'SCAN_CANCEL' || d.type === 'SCAN_ERROR') {
-          hideScannerBanner();
-          if (offlineShell.classList.contains('show')) {
-            // Offline shell — escribe en localStorage para que el shell lo lea
-            try {
-              localStorage.setItem('dinet_scan_result', JSON.stringify({
-                type: d.type, targetId: d.targetId, code: d.code || '', ts: Date.now()
-              }));
-            } catch(e) {}
-          } else {
-            // Online — GAS hace polling de 'dinet_scan_result' en localStorage.
-            // Google Warden bloquea postMessage GAS↔parent, localStorage es el único canal fiable.
-            try {
-              localStorage.setItem('dinet_scan_result', JSON.stringify({
-                type: d.type, targetId: d.targetId, code: d.code || '', ts: Date.now()
-              }));
-            } catch(e) {}
-          }
-        }
+      // OPEN_SCANNER via postMessage (fallback — normalmente viene via localStorage)
+      if (d.type === 'OPEN_SCANNER') {
+        showScannerBanner(d.targetId, d.title);
       }
     });
-
-    // ── Polling dinet_scan_close — el GAS escribe aquí cuando quiere cerrar el overlay ──
-    (function() {
-      var _lastCloseTs = 0;
-      setInterval(function() {
-        try {
-          var raw = localStorage.getItem('dinet_scan_close');
-          if (!raw) return;
-          var ts = Number(raw);
-          if (!ts || ts <= _lastCloseTs) return;
-          _lastCloseTs = ts;
-          localStorage.removeItem('dinet_scan_close');
-          hideScannerBanner();
-        } catch(e) {}
-      }, 300);
-    })();
     // ==================== FULLSCREEN ====================
     // El manifest ya tiene display:fullscreen pero iOS/algunos Android
     // requieren que el usuario lo dispare. Lo hacemos en el primer toque.
