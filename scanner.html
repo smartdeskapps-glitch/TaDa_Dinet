@@ -421,10 +421,21 @@
       detenerNativo();
       detenerFallback();
 
+      const payload = { type: 'SCAN_RESULT', targetId, code };
+
+      // Canal 1: postMessage al parent (index.html — mismo origen github.io ✓)
+      // index.html recibe esto y lo escribe en localStorage para el GAS
       try {
         const dest = (window.opener && !window.opener.closed) ? window.opener : window.parent;
-        dest.postMessage({ type: 'SCAN_RESULT', targetId, code }, '*');
+        dest.postMessage(payload, '*');
         if (window.opener && !window.opener.closed) setTimeout(() => { try { window.close(); } catch(e){} }, 500);
+      } catch(e) {}
+
+      // Canal 2: localStorage directo (respaldo — por si postMessage falla por algún motivo)
+      try {
+        localStorage.setItem('dinet_scan_result', JSON.stringify({
+          type: 'SCAN_RESULT', targetId, code, ts: Date.now()
+        }));
       } catch(e) {}
     }
 
@@ -433,10 +444,20 @@
       done = true;
       detenerNativo();
       detenerFallback();
+
+      const payload = { type: 'SCAN_CANCEL', targetId };
+
       try {
         const dest = (window.opener && !window.opener.closed) ? window.opener : window.parent;
-        dest.postMessage({ type: 'SCAN_CANCEL', targetId }, '*');
+        dest.postMessage(payload, '*');
         if (window.opener && !window.opener.closed) setTimeout(() => { try { window.close(); } catch(e){} }, 200);
+      } catch(e) {}
+
+      // Respaldo localStorage
+      try {
+        localStorage.setItem('dinet_scan_result', JSON.stringify({
+          type: 'SCAN_CANCEL', targetId, code: '', ts: Date.now()
+        }));
       } catch(e) {}
     }
 
