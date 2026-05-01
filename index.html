@@ -672,7 +672,6 @@
       scanIframe.src = '';
     }
 
-    // ── DEBUG TEMPORAL — borrar después de confirmar ──
     window.addEventListener('message', (event) => {
       console.log('[INDEX DEBUG] message recibido:', event.origin, JSON.stringify(event.data));
     });
@@ -684,8 +683,6 @@
       'SCAN_RESULT', 'SCAN_CANCEL', 'SCAN_ERROR'
     ]);
 
-      let _gasSourceWindow = null; // referencia al window del GAS que pidió el scanner
-
     window.addEventListener('message', (event) => {
       const isSelfOrigin = event.origin === ORIGIN_SELF;
 
@@ -693,8 +690,9 @@
       if (!d || typeof d !== 'object' || !d.type) return;
       if (!KNOWN_TYPES.has(d.type)) return;
 
+      // OPEN_SCANNER: el GAS no puede postMessage hacia afuera (Google Warden lo bloquea).
+      // Este path queda como fallback por si acaso, pero el canal real es localStorage polling.
       if (d.type === 'OPEN_SCANNER') {
-        _gasSourceWindow = event.source; // guardar referencia al GAS que lo pidió
         showScannerBanner(d.targetId, d.title);
         return;
       }
@@ -705,15 +703,40 @@
         if (d.type === 'SCAN_RESULT' || d.type === 'SCAN_CANCEL' || d.type === 'SCAN_ERROR') {
           hideScannerBanner();
           if (offlineShell.classList.contains('show')) {
-            // offline shell — ya tiene su propio polling de localStorage
-          } else if (_gasSourceWindow) {
-            // Reenviar al GAS usando event.source guardado.
-            // parent->child via la misma referencia de ventana = aceptado por Google.
-            try { _gasSourceWindow.postMessage(d, '*'); } catch(e) {}
+            // Offline shell — escribe en localStorage para que el shell lo lea
+            try {
+              localStorage.setItem('dinet_scan_result', JSON.stringify({
+                type: d.type, targetId: d.targetId, code: d.code || '', ts: Date.now()
+              }));
+            } catch(e) {}
+          } else {
+            // Online — GAS hace polling de 'dinet_scan_result' en localStorage.
+            // Google Warden bloquea postMessage GAS↔parent, localStorage es el único canal fiable.
+            try {
+              localStorage.setItem('dinet_scan_result', JSON.stringify({
+                type: d.type, targetId: d.targetId, code: d.code || '', ts: Date.now()
+              }));
+            } catch(e) {}
           }
         }
       }
     });
+
+    // ── Polling dinet_scan_close — el GAS escribe aquí cuando quiere cerrar el overlay ──
+    (function() {
+      var _lastCloseTs = 0;
+      setInterval(function() {
+        try {
+          var raw = localStorage.getItem('dinet_scan_close');
+          if (!raw) return;
+          var ts = Number(raw);
+          if (!ts || ts <= _lastCloseTs) return;
+          _lastCloseTs = ts;
+          localStorage.removeItem('dinet_scan_close');
+          hideScannerBanner();
+        } catch(e) {}
+      }, 300);
+    })();
     // ==================== FULLSCREEN ====================
     // El manifest ya tiene display:fullscreen pero iOS/algunos Android
     // requieren que el usuario lo dispare. Lo hacemos en el primer toque.
