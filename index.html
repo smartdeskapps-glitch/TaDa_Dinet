@@ -613,39 +613,58 @@
       window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
     }
 
-    // ── POLLING localStorage → scanner ──────────────────────────
-    // Canal GAS→index: GAS escribe 'dinet_scan_request', index lo lee cada 200ms.
-    // Google Warden bloquea postMessage desde/hacia el iframe del GAS — localStorage
-    // es el único canal fiable entre origins distintos en el mismo browser.
+    // ── OBSERVER: título del iframe GAS como canal cross-origin ──────────────
+    // localStorage del GAS (googleusercontent.com) ≠ localStorage de github.io.
+    // postMessage bloqueado por Google Warden.
+    // SOLUCIÓN: GAS cambia document.title con payload base64 → MutationObserver
+    // en el <title> del iframe lo detecta sin polling costoso.
     (function() {
-      var _lastScanTs = 0;
-      setInterval(function() {
-        try {
-          var raw = localStorage.getItem('dinet_scan_request');
-          if (!raw) return;
-          var req = JSON.parse(raw);
-          if (!req || !req.ts || req.ts <= _lastScanTs) return;
-          _lastScanTs = req.ts;
-          localStorage.removeItem('dinet_scan_request');
-          showScannerBanner(req.targetId, req.title);
-        } catch(e) {}
-      }, 50);
-    })();
+      var appFrame = document.getElementById('app-frame');
+      if (!appFrame) return;
 
-    // ── POLLING dinet_scan_close — GAS pide cerrar el overlay ──
-    (function() {
+      var _lastReqTs   = 0;
       var _lastCloseTs = 0;
-      setInterval(function() {
+
+      function checkFrameTitle() {
         try {
-          var raw = localStorage.getItem('dinet_scan_close');
-          if (!raw) return;
-          var ts = Number(raw);
-          if (!ts || ts <= _lastCloseTs) return;
-          _lastCloseTs = ts;
-          localStorage.removeItem('dinet_scan_close');
-          hideScannerBanner();
+          var doc = appFrame.contentDocument || appFrame.contentWindow.document;
+          var t   = doc && doc.title;
+          if (!t) return;
+
+          if (t.indexOf('SCAN_REQ:') === 0) {
+            var decoded = JSON.parse(decodeURIComponent(escape(atob(t.replace('SCAN_REQ:', '')))));
+            if (!decoded || !decoded.ts || decoded.ts <= _lastReqTs) return;
+            _lastReqTs = decoded.ts;
+            showScannerBanner(decoded.targetId, decoded.title);
+            return;
+          }
+
+          if (t.indexOf('SCAN_CLOSE:') === 0) {
+            var closeTs = Number(t.replace('SCAN_CLOSE:', ''));
+            if (closeTs <= _lastCloseTs) return;
+            _lastCloseTs = closeTs;
+            hideScannerBanner();
+            return;
+          }
         } catch(e) {}
-      }, 50);
+      }
+
+      // MutationObserver: reacciona al cambio de título instantáneamente
+      function attachObserver() {
+        try {
+          var doc     = appFrame.contentDocument || appFrame.contentWindow.document;
+          var titleEl = doc && doc.querySelector('title');
+          if (!titleEl) { setTimeout(attachObserver, 500); return; }
+          new MutationObserver(checkFrameTitle)
+            .observe(titleEl, { childList: true, characterData: true, subtree: true });
+        } catch(e) {
+          // cross-origin — acceso denegado, usar polling liviano como fallback
+        }
+      }
+
+      appFrame.addEventListener('load', attachObserver);
+      // Polling liviano como respaldo universal (100ms es suficiente y barato)
+      setInterval(checkFrameTitle, 100);
     })();
 
     let deferredPrompt;
@@ -687,8 +706,8 @@
     }
 
     // ── Recibir resultado del scanner ──────────────────────────────
-    // scanner.html → postMessage → index.html (mismo origen github.io ✓ no bloqueado)
-    // index.html → localStorage → GAS (polling cada 200ms en el GAS)
+    // scanner.html → postMessage → index.html (mismo origen github.io ✓)
+    // index.html → document.title del iframe GAS → GAS lee su propio título (polling 50ms)
     window.addEventListener('message', (event) => {
       const d = event.data;
       if (!d || typeof d !== 'object' || !d.type) return;
@@ -698,32 +717,25 @@
 
       if (isScanResult && isSameOrigin) {
         hideScannerBanner();
-        // Escribir resultado en localStorage — el GAS hace polling y lo recoge
+        // Escribir resultado en el título del iframe del GAS
+        // El GAS hace polling de document.title cada 50ms y lo recoge
         try {
-          localStorage.setItem('dinet_scan_result', JSON.stringify({
-            type:     d.type,
-            targetId: d.targetId,
-            code:     d.code || '',
-            ts:       Date.now()
-          }));
+          const appFrame = document.getElementById('app-frame');
+          if (appFrame && appFrame.contentDocument) {
+            const payload = { type: d.type, targetId: d.targetId, code: d.code || '', ts: Date.now() };
+            appFrame.contentDocument.title = 'SCAN_RES:' + btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+          }
         } catch(e) {
-          console.error('[Scanner] No se pudo escribir resultado en localStorage:', e);
+          console.warn('[Scanner] No se pudo escribir en título del GAS:', e.message);
         }
-        // También manejar el offline shell si está activo
+        // Offline shell
         if (offlineShell.classList.contains('show') && d.type === 'SCAN_RESULT') {
-          try {
-            document.getElementById('os-ean').value = d.code || '';
-            osResolverEAN();
-          } catch(e) {}
+          try { document.getElementById('os-ean').value = d.code || ''; osResolverEAN(); } catch(e) {}
         }
         return;
       }
 
-      // OPEN_SCANNER via postMessage (fallback — normalmente viene via localStorage)
-      if (d.type === 'OPEN_SCANNER') {
-        showScannerBanner(d.targetId, d.title);
-      }
-    });
+      if (d.type === 'OPEN_SCANNER') showScannerBanner(d.targetId, d.title);
     // ==================== FULLSCREEN ====================
     // El manifest ya tiene display:fullscreen pero iOS/algunos Android
     // requieren que el usuario lo dispare. Lo hacemos en el primer toque.
