@@ -349,25 +349,32 @@
 
     let appCargada = false;
 
-    const hideSplash = () => {
-      splash.style.opacity = '0';
-      setTimeout(() => { splash.style.visibility = 'hidden'; splash.style.display = 'none'; }, 600);
-    };
+    function hideSplash() {
+      splash.style.opacity     = '0';
+      splash.style.visibility  = 'hidden';
+      splash.style.pointerEvents = 'none';
+      setTimeout(function() { splash.style.display = 'none'; }, 650);
+    }
 
-    iframe.onload = () => {
+    // splashTimeout declarado ANTES de iframe.onload para evitar TDZ error
+    var splashTimeout = setTimeout(function() {
+      hideSplash();
+      if (!appCargada) {
+        if (!navigator.onLine) mostrarOfflineShell();
+      }
+    }, 6000);
+
+    iframe.onload = function() {
       appCargada = true;
       clearTimeout(splashTimeout);
       offlineShell.classList.remove('show');
-      setTimeout(hideSplash, 500);
+      hideSplash();
     };
 
-    const splashTimeout = setTimeout(() => {
-      hideSplash();
-      if (!navigator.onLine && !appCargada) mostrarOfflineShell();
+    // Seguro absoluto: si a los 8s el splash sigue visible, forzar ocultamiento
+    setTimeout(function() {
+      if (splash.style.display !== 'none') hideSplash();
     }, 8000);
-
-    setTimeout(hideSplash, 4000);
-    setTimeout(() => { splash.classList.add('splash-hidden'); }, 6000);
 
     // ── Online / Offline ───────────────────────────────────────
     window.addEventListener('offline', () => {
@@ -388,11 +395,10 @@
     function intentarReconectar() {
       if (navigator.onLine) {
         offlineShell.classList.remove('show');
+        // Recargar el iframe sin volver a mostrar el splash
         iframe.src = iframe.src;
-        splash.style.display = 'flex';
-        splash.style.opacity  = '1';
-        splash.style.visibility = 'visible';
-        setTimeout(hideSplash, 5000);
+        // Ocultar splash por si quedó visible
+        hideSplash();
       } else {
         const btn = document.querySelector('.os-btn-reconect');
         if (btn) { btn.textContent = 'Sin red aún...'; setTimeout(() => { btn.textContent = '↺ Reintentar'; }, 2000); }
@@ -613,58 +619,57 @@
       window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
     }
 
-    // ── OBSERVER: título del iframe GAS como canal cross-origin ──────────────
-    // localStorage del GAS (googleusercontent.com) ≠ localStorage de github.io.
-    // postMessage bloqueado por Google Warden.
-    // SOLUCIÓN: GAS cambia document.title con payload base64 → MutationObserver
-    // en el <title> del iframe lo detecta sin polling costoso.
+    // ── SCANNER: polling localStorage ──────────────────────────────────────
+    // El GAS escribe en su propio localStorage (googleusercontent.com).
+    // El index.html escribe en el suyo (github.io).
+    // PERO: el scanner.html (github.io) puede leer el localStorage de github.io
+    // y también escribir directamente — por eso el canal de RESULTADO funciona
+    // via scanner.html → localStorage github.io → index.html.
+    // Para el canal de APERTURA (GAS → index), el GAS inyecta un script que
+    // crea un iframe oculto same-origin con github.io que actúa de bridge.
+    // SOLUCIÓN SIMPLE: el botón del GAS abre scanner.html directamente como
+    // popup/nueva-ventana — sin necesidad de bridge cross-origin.
+    // El resultado llega via localStorage que scanner.html escribe en github.io.
     (function() {
-      var appFrame = document.getElementById('app-frame');
-      if (!appFrame) return;
+      var _lastScanTs   = 0;
+      var _lastCloseTs  = 0;
 
-      var _lastReqTs   = 0;
-      var _lastCloseTs = 0;
-
-      function checkFrameTitle() {
+      setInterval(function() {
         try {
-          var doc = appFrame.contentDocument || appFrame.contentWindow.document;
-          var t   = doc && doc.title;
-          if (!t) return;
-
-          if (t.indexOf('SCAN_REQ:') === 0) {
-            var decoded = JSON.parse(decodeURIComponent(escape(atob(t.replace('SCAN_REQ:', '')))));
-            if (!decoded || !decoded.ts || decoded.ts <= _lastReqTs) return;
-            _lastReqTs = decoded.ts;
-            showScannerBanner(decoded.targetId, decoded.title);
-            return;
+          // Canal resultado: scanner.html (github.io) escribe aquí directamente
+          var raw = localStorage.getItem('dinet_scan_result');
+          if (raw) {
+            var d = JSON.parse(raw);
+            if (d && d.ts && d.ts > _lastScanTs) {
+              _lastScanTs = d.ts;
+              localStorage.removeItem('dinet_scan_result');
+              hideScannerBanner();
+            }
           }
 
-          if (t.indexOf('SCAN_CLOSE:') === 0) {
-            var closeTs = Number(t.replace('SCAN_CLOSE:', ''));
-            if (closeTs <= _lastCloseTs) return;
-            _lastCloseTs = closeTs;
-            hideScannerBanner();
-            return;
+          // Canal apertura: leer petición
+          var rawReq = localStorage.getItem('dinet_scan_request');
+          if (rawReq) {
+            var req = JSON.parse(rawReq);
+            if (req && req.ts && req.ts > _lastCloseTs) {
+              _lastCloseTs = req.ts;
+              localStorage.removeItem('dinet_scan_request');
+              showScannerBanner(req.targetId, req.title);
+            }
+          }
+
+          // Canal cierre
+          var rawClose = localStorage.getItem('dinet_scan_close');
+          if (rawClose) {
+            var closeTs = Number(rawClose);
+            if (closeTs > _lastCloseTs) {
+              _lastCloseTs = closeTs;
+              localStorage.removeItem('dinet_scan_close');
+              hideScannerBanner();
+            }
           }
         } catch(e) {}
-      }
-
-      // MutationObserver: reacciona al cambio de título instantáneamente
-      function attachObserver() {
-        try {
-          var doc     = appFrame.contentDocument || appFrame.contentWindow.document;
-          var titleEl = doc && doc.querySelector('title');
-          if (!titleEl) { setTimeout(attachObserver, 500); return; }
-          new MutationObserver(checkFrameTitle)
-            .observe(titleEl, { childList: true, characterData: true, subtree: true });
-        } catch(e) {
-          // cross-origin — acceso denegado, usar polling liviano como fallback
-        }
-      }
-
-      appFrame.addEventListener('load', attachObserver);
-      // Polling liviano como respaldo universal (100ms es suficiente y barato)
-      setInterval(checkFrameTitle, 100);
+      }, 100);
     })();
 
     let deferredPrompt;
@@ -707,35 +712,27 @@
 
     // ── Recibir resultado del scanner ──────────────────────────────
     // scanner.html → postMessage → index.html (mismo origen github.io ✓)
-    // index.html → document.title del iframe GAS → GAS lee su propio título (polling 50ms)
+    // Resultado se escribe en localStorage de github.io.
     window.addEventListener('message', (event) => {
       const d = event.data;
       if (!d || typeof d !== 'object' || !d.type) return;
-
-      const isScanResult = d.type === 'SCAN_RESULT' || d.type === 'SCAN_CANCEL';
       const isSameOrigin = event.origin === window.location.origin;
 
-      if (isScanResult && isSameOrigin) {
+      if ((d.type === 'SCAN_RESULT' || d.type === 'SCAN_CANCEL') && isSameOrigin) {
         hideScannerBanner();
-        // Escribir resultado en el título del iframe del GAS
-        // El GAS hace polling de document.title cada 50ms y lo recoge
         try {
-          const appFrame = document.getElementById('app-frame');
-          if (appFrame && appFrame.contentDocument) {
-            const payload = { type: d.type, targetId: d.targetId, code: d.code || '', ts: Date.now() };
-            appFrame.contentDocument.title = 'SCAN_RES:' + btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-          }
-        } catch(e) {
-          console.warn('[Scanner] No se pudo escribir en título del GAS:', e.message);
-        }
-        // Offline shell
+          localStorage.setItem('dinet_scan_result', JSON.stringify({
+            type: d.type, targetId: d.targetId, code: d.code || '', ts: Date.now()
+          }));
+        } catch(e) {}
         if (offlineShell.classList.contains('show') && d.type === 'SCAN_RESULT') {
           try { document.getElementById('os-ean').value = d.code || ''; osResolverEAN(); } catch(e) {}
         }
         return;
       }
-
       if (d.type === 'OPEN_SCANNER') showScannerBanner(d.targetId, d.title);
+    });
+
     // ==================== FULLSCREEN ====================
     // El manifest ya tiene display:fullscreen pero iOS/algunos Android
     // requieren que el usuario lo dispare. Lo hacemos en el primer toque.
