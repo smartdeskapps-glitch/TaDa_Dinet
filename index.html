@@ -629,7 +629,7 @@
           localStorage.removeItem('dinet_scan_request');
           showScannerBanner(req.targetId, req.title);
         } catch(e) {}
-      }, 200); // 200ms para respuesta más rápida
+      }, 50);
     })();
 
     // ── POLLING dinet_scan_close — GAS pide cerrar el overlay ──
@@ -645,7 +645,7 @@
           localStorage.removeItem('dinet_scan_close');
           hideScannerBanner();
         } catch(e) {}
-      }, 200);
+      }, 50);
     })();
 
     let deferredPrompt;
